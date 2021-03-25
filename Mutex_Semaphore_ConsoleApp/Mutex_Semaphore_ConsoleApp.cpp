@@ -112,6 +112,52 @@ void print_win32_mutex(int n, char c)
     }
 }
 
+void print_win32_semaphore(int n, char c)
+{
+    DWORD dwWaitResult;
+    BOOL bContinue = TRUE;
+
+    while (bContinue)
+    {
+        // Try to enter the semaphore gate.
+
+        dwWaitResult = WaitForSingleObject(
+            ghSemaphore,   // handle to semaphore
+            INFINITE);     // no time-out interval
+
+        switch (dwWaitResult)
+        {
+            // The semaphore object was signaled.
+            case WAIT_OBJECT_0:
+                // TODO: Perform task
+                bContinue = FALSE;
+                for (int i = 0; i < n; ++i)
+                {
+                    cout << c;
+                    g_count++;
+                }
+                cout << '\n';
+
+                cout << "count=" << g_count << endl;
+
+                // Release the semaphore when task is finished
+                if (!ReleaseSemaphore(
+                    ghSemaphore,  // handle to semaphore
+                    1,            // increase count by one
+                    NULL))       // not interested in previous count
+                {
+                    printf("ReleaseSemaphore error: %d\n", GetLastError());
+                }
+                break;
+
+            // The semaphore was nonsignaled, so a time-out occurred.
+            case WAIT_TIMEOUT:
+                printf("Thread: wait timed out\n");
+                break;
+        }
+    }
+}
+
 int main()
 {
     cout << "No Synchronized:\n";
@@ -166,13 +212,15 @@ int main()
     t9.join();
     t10.join();
 
+    CloseHandle(ghMutex);
+
     cout << '\n';
 
     cout << "With Win32 API: CreateSemaphore:\n";
     // Create a semaphore with initial and max counts of MAX_SEM_COUNT
     ghSemaphore = CreateSemaphore(
         NULL,           // default security attributes
-        MAX_SEM_COUNT,  // initial count
+        1L,  // initial count
         MAX_SEM_COUNT,  // maximum count
         NULL);          // unnamed semaphore
 
@@ -182,9 +230,13 @@ int main()
         return 1;
     }
 
+    thread t11(print_win32_semaphore, 10, 'A');
+    thread t12(print_win32_semaphore, 5, 'B');
+    t11.join();
+    t12.join();
 
+    CloseHandle(ghSemaphore);
 
-    
     cout << '\n';
     
     cout << "Press Enter to continute...\n";
