@@ -239,10 +239,85 @@ int main()
 
     cout << '\n';
     
-    cout << "Press Enter to continute...\n";
+    cout << "Press Enter to continute the multi-process example\n";
     char ch;
     ch = getchar();
     cout << ch;
+
+    cout << '\n';
+
+    HANDLE hMutex;
+
+    hMutex = CreateMutex(
+        NULL,                        // default security descriptor
+        FALSE,                       // mutex not owned
+        TEXT("NameOfMutexObject"));  // object name
+
+    if (hMutex == NULL)
+        printf("CreateMutex error: %d\n", GetLastError());
+    else
+        if (GetLastError() == ERROR_ALREADY_EXISTS)
+            printf("CreateMutex opened an existing mutex\n");
+        else printf("CreateMutex created a new mutex.\n");
+
+    // Keep this process around until the second process is run
+    cout << "Press Enter after you open the second process\n";
+    ch = getchar();
+    cout << ch;
+
+    HANDLE hFile;
+    LPCTSTR szLogFilePath = L"D:\\Mutex_Semaphore\\Logger.log";
+
+    hFile = CreateFileW(szLogFilePath, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+
+    if (hFile == INVALID_HANDLE_VALUE)
+        printf("errCode : %d", GetLastError());
+
+    string msg = "Process A\n";
+
+    while (true)
+    {
+        DWORD dwWaitResult;
+
+        dwWaitResult = WaitForSingleObject(
+            hMutex,    // handle to mutex
+            INFINITE);  // no time-out interval
+
+        switch (dwWaitResult)
+        {
+            // The thread got ownership of the mutex
+        case WAIT_OBJECT_0:
+
+            for (int i = 0; i < 3; i++)
+            {
+                SetFilePointer(hFile, 0, NULL, FILE_END);
+                WriteFile(hFile, msg.c_str(), strlen(msg.c_str()), NULL, NULL);
+            }
+
+            // Release ownership of the mutex object
+            if (!ReleaseMutex(hMutex))
+            {
+                // Handle error.
+            }
+            break;
+
+            // The thread got ownership of an abandoned mutex
+            // The database is in an indeterminate state
+        case WAIT_ABANDONED:
+            break;
+        } 
+    }
+
+    if (hFile != NULL)
+    {
+        CloseHandle(hFile);
+        hFile = NULL;
+    }
+
+    if (hMutex != NULL)
+    {
+        CloseHandle(hMutex);
+    }
 
     return 0;
 }
