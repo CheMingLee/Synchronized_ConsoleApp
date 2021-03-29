@@ -5,8 +5,6 @@
 #include <condition_variable>
 #include <windows.h>
 
-#define MAX_SEM_COUNT 10
-
 using namespace std;
 
 int g_count = 0;
@@ -15,6 +13,97 @@ mutex g_mutex;
 CRITICAL_SECTION cs;
 HANDLE ghMutex;
 HANDLE ghSemaphore;
+
+HANDLE g_hProcessMutex;
+HANDLE g_hFile;
+
+void GetCharToContinute()
+{
+    cout << "Press Enter to continute...\n";
+    char ch;
+    ch = getchar();
+    cout << ch;
+}
+
+void WriteLog()
+{
+    LPCTSTR szLogFilePath = L"D:\\Mutex_Semaphore\\write_log.log";
+    g_hFile = CreateFileW(szLogFilePath, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (g_hFile == INVALID_HANDLE_VALUE)
+    {
+        printf("errCode : %d", GetLastError());
+    }
+
+    string msg = "Process A\n";
+    int iCnt = 0;
+    while (iCnt < 300000)
+    {
+        for (int i = 0; i < 5; i++)
+        {
+            SetFilePointer(g_hFile, 0, NULL, FILE_END);
+            WriteFile(g_hFile, msg.c_str(), strlen(msg.c_str()), NULL, NULL);
+        }
+        iCnt++;
+    }
+
+    if (g_hFile != NULL)
+    {
+        CloseHandle(g_hFile);
+        g_hFile = NULL;
+    }
+}
+
+void WriteLog_mutex()
+{
+    LPCTSTR szLogFilePath = L"D:\\Mutex_Semaphore\\write_log_mutex.log";
+    g_hFile = CreateFileW(szLogFilePath, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (g_hFile == INVALID_HANDLE_VALUE)
+    {
+        printf("errCode : %d", GetLastError());
+    }
+    
+    string msg = "Process A\n";
+    int iCnt = 0;
+    while (iCnt < 300000)
+    {
+        DWORD dwWaitResult;
+
+        dwWaitResult = WaitForSingleObject(
+            g_hProcessMutex,    // handle to mutex
+            INFINITE);          // no time-out interval
+
+        switch (dwWaitResult)
+        {
+            // The thread got ownership of the mutex
+        case WAIT_OBJECT_0:
+
+            for (int i = 0; i < 5; i++)
+            {
+                SetFilePointer(g_hFile, 0, NULL, FILE_END);
+                WriteFile(g_hFile, msg.c_str(), strlen(msg.c_str()), NULL, NULL);
+            }
+
+            // Release ownership of the mutex object
+            if (!ReleaseMutex(g_hProcessMutex))
+            {
+                // Handle error.
+            }
+            break;
+
+            // The thread got ownership of an abandoned mutex
+            // The database is in an indeterminate state
+        case WAIT_ABANDONED:
+            break;
+        }
+        iCnt++;
+    }
+
+    if (g_hFile != NULL)
+    {
+        CloseHandle(g_hFile);
+        g_hFile = NULL;
+    }
+}
 
 void print(int n, char c)
 {
@@ -30,7 +119,6 @@ void print(int n, char c)
 
 void print_mutex(int n, char c)
 {
-    // critical section (exclusive access to std::cout signaled by locking mtx):
     g_mutex.lock();
     for (int i = 0; i < n; ++i)
     {
@@ -45,7 +133,6 @@ void print_mutex(int n, char c)
 
 void print_mutex_lock_guard(int n, char c)
 {
-    // critical section (exclusive access to std::cout signaled by locking mtx):
     lock_guard<mutex> lock(g_mutex);
     for (int i = 0; i < n; ++i)
     {
@@ -76,7 +163,6 @@ void print_win32_mutex(int n, char c)
 {
     // Request ownership of mutex.
     DWORD dwWaitResult;
-
     dwWaitResult = WaitForSingleObject(
         ghMutex,    // handle to mutex
         INFINITE);  // no time-out interval
@@ -85,30 +171,21 @@ void print_win32_mutex(int n, char c)
     {
         // The thread got ownership of the mutex
         case WAIT_OBJECT_0:
-            __try {
-                for (int i = 0; i < n; ++i)
-                {
-                    cout << c;
-                    g_count++;
-                }
-                cout << '\n';
-
-                cout << "count=" << g_count << endl;
+        {
+            for (int i = 0; i < n; ++i)
+            {
+                cout << c;
+                g_count++;
             }
-
-            __finally {
-                // Release ownership of the mutex object
-                if (!ReleaseMutex(ghMutex))
-                {
-                    // Handle error.
-                }
-            }
+            cout << '\n';
+            cout << "count=" << g_count << endl;
+            ReleaseMutex(ghMutex);
             break;
-
-        // The thread got ownership of an abandoned mutex
-        // The database is in an indeterminate state
+        }
         case WAIT_ABANDONED:
+        {
             break;
+        }
     }
 }
 
@@ -116,20 +193,18 @@ void print_win32_semaphore(int n, char c)
 {
     DWORD dwWaitResult;
     BOOL bContinue = TRUE;
-
     while (bContinue)
     {
         // Try to enter the semaphore gate.
-
         dwWaitResult = WaitForSingleObject(
-            ghSemaphore,   // handle to semaphore
-            INFINITE);     // no time-out interval
+            ghSemaphore,    // handle to semaphore
+            0L);            // zero-second time-out interval
 
         switch (dwWaitResult)
         {
             // The semaphore object was signaled.
             case WAIT_OBJECT_0:
-                // TODO: Perform task
+            {
                 bContinue = FALSE;
                 for (int i = 0; i < n; ++i)
                 {
@@ -137,23 +212,20 @@ void print_win32_semaphore(int n, char c)
                     g_count++;
                 }
                 cout << '\n';
-
                 cout << "count=" << g_count << endl;
 
-                // Release the semaphore when task is finished
-                if (!ReleaseSemaphore(
-                    ghSemaphore,  // handle to semaphore
-                    1,            // increase count by one
-                    NULL))       // not interested in previous count
-                {
-                    printf("ReleaseSemaphore error: %d\n", GetLastError());
-                }
+                ReleaseSemaphore(
+                    ghSemaphore,    // handle to semaphore
+                    1,              // increase count by one
+                    NULL);          // not interested in previous count
                 break;
-
+            }
             // The semaphore was nonsignaled, so a time-out occurred.
             case WAIT_TIMEOUT:
+            {
                 printf("Thread: wait timed out\n");
                 break;
+            } 
         }
     }
 }
@@ -161,6 +233,7 @@ void print_win32_semaphore(int n, char c)
 int main()
 {
     cout << "No Synchronized:\n";
+    g_count = 0;
     thread t1(print, 10, 'A');
     thread t2(print, 5, 'B');
     t1.join();
@@ -169,6 +242,7 @@ int main()
     cout << '\n';
 
     cout << "With std::mutex:\n";
+    g_count = 0;
     thread t3(print_mutex, 10, 'A');
     thread t4(print_mutex, 5, 'B');
     t3.join();
@@ -177,6 +251,7 @@ int main()
     cout << '\n';
 
     cout << "With std::mutex (lock_guard):\n";
+    g_count = 0;
     thread t5(print_mutex_lock_guard, 10, 'A');
     thread t6(print_mutex_lock_guard, 5, 'B');
     t5.join();
@@ -185,6 +260,7 @@ int main()
     cout << '\n';
 
     cout << "With Win32 API: CRITICAL_SECTION:\n";
+    g_count = 0;
     InitializeCriticalSection(&cs);
     thread t7(print_critical_section, 10, 'A');
     thread t8(print_critical_section, 5, 'B');
@@ -195,6 +271,7 @@ int main()
     cout << '\n';
 
     cout << "With Win32 API: CreateMutex:\n";
+    g_count = 0;
     // Create a mutex with no initial owner
     ghMutex = CreateMutex(
         NULL,              // default security attributes
@@ -217,11 +294,12 @@ int main()
     cout << '\n';
 
     cout << "With Win32 API: CreateSemaphore:\n";
-    // Create a semaphore with initial and max counts of MAX_SEM_COUNT
+    g_count = 0;
+    // Create a semaphore with initial and max counts of 1
     ghSemaphore = CreateSemaphore(
         NULL,           // default security attributes
-        1L,  // initial count
-        MAX_SEM_COUNT,  // maximum count
+        1L,             // initial count
+        1L,             // maximum count
         NULL);          // unnamed semaphore
 
     if (ghSemaphore == NULL)
@@ -239,84 +317,49 @@ int main()
 
     cout << '\n';
     
-    cout << "Press Enter to continute the multi-process example\n";
-    char ch;
-    ch = getchar();
-    cout << ch;
+    cout << "Start the multi-process example\n";
+    GetCharToContinute();
 
     cout << '\n';
 
-    HANDLE hMutex;
+    cout << "Write Log without synchronized start\n";
+    cout << "Please start Process B then\n";
+    GetCharToContinute();
+    Sleep(1000);
+    WriteLog();
+    cout << "Write Log without synchronized end\n";
 
-    hMutex = CreateMutex(
-        NULL,                        // default security descriptor
-        FALSE,                       // mutex not owned
-        TEXT("NameOfMutexObject"));  // object name
+    cout << '\n';
 
-    if (hMutex == NULL)
-        printf("CreateMutex error: %d\n", GetLastError());
+    cout << "Write Log with mutex start\n";
+    GetCharToContinute();
+
+    g_hProcessMutex = CreateMutex(
+        NULL,                       // request full access
+        FALSE,                      // handle not inheritable
+        TEXT("ProcessMutex"));      // object name
+
+    if (GetLastError() == ERROR_ALREADY_EXISTS)
+    {
+        printf("CreateMutex opened an existing mutex\n");
+        GetCharToContinute();
+        return 0;
+    }  
     else
-        if (GetLastError() == ERROR_ALREADY_EXISTS)
-            printf("CreateMutex opened an existing mutex\n");
-        else printf("CreateMutex created a new mutex.\n");
-
-    // Keep this process around until the second process is run
-    cout << "Press Enter after you open the second process\n";
-    ch = getchar();
-    cout << ch;
-
-    HANDLE hFile;
-    LPCTSTR szLogFilePath = L"D:\\Mutex_Semaphore\\Logger.log";
-
-    hFile = CreateFileW(szLogFilePath, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-
-    if (hFile == INVALID_HANDLE_VALUE)
-        printf("errCode : %d", GetLastError());
-
-    string msg = "Process A\n";
-
-    while (true)
     {
-        DWORD dwWaitResult;
-
-        dwWaitResult = WaitForSingleObject(
-            hMutex,    // handle to mutex
-            INFINITE);  // no time-out interval
-
-        switch (dwWaitResult)
-        {
-            // The thread got ownership of the mutex
-        case WAIT_OBJECT_0:
-
-            for (int i = 0; i < 3; i++)
-            {
-                SetFilePointer(hFile, 0, NULL, FILE_END);
-                WriteFile(hFile, msg.c_str(), strlen(msg.c_str()), NULL, NULL);
-            }
-
-            // Release ownership of the mutex object
-            if (!ReleaseMutex(hMutex))
-            {
-                // Handle error.
-            }
-            break;
-
-            // The thread got ownership of an abandoned mutex
-            // The database is in an indeterminate state
-        case WAIT_ABANDONED:
-            break;
-        } 
+        printf("CreateMutex created a new mutex.\n");
+        printf("Wait Process B OpenMutex\n");
+        GetCharToContinute();
+        printf("Start Process A\n");
+        Sleep(1000);
+        WriteLog_mutex();
+        cout << "Write Log with mutex end\n";
+        GetCharToContinute();
     }
 
-    if (hFile != NULL)
+    if (g_hProcessMutex != NULL)
     {
-        CloseHandle(hFile);
-        hFile = NULL;
-    }
-
-    if (hMutex != NULL)
-    {
-        CloseHandle(hMutex);
+        CloseHandle(g_hProcessMutex);
     }
 
     return 0;
