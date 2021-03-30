@@ -27,7 +27,7 @@ void WriteLog()
     
     string msg = "Process B\n";
     int iCnt = 0;
-    while (iCnt < 300000)
+    while (iCnt < 100000)
     {
         for (int i = 0; i < 5; i++)
         {
@@ -55,7 +55,7 @@ void WriteLog_mutex()
     
     string msg = "Process B\n";
     int iCnt = 0;
-    while (iCnt < 300000)
+    while (iCnt < 100000)
     {
         DWORD dwWaitResult;
 
