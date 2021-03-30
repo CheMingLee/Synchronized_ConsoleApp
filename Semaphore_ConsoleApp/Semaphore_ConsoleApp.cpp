@@ -1,15 +1,46 @@
 ﻿#include <windows.h>
 #include <stdio.h>
 #include <iostream>
+#include <thread>
 
-#define MAX_SEM_COUNT 10
-#define THREADCOUNT 12
+#define MAX_SEM_COUNT 5
 
 using namespace std;
 
 HANDLE ghSemaphore;
 
-DWORD WINAPI ThreadProc(LPVOID);
+void ThreadProducer()
+{
+    DWORD dwWaitResult;
+    BOOL bContinue = TRUE;
+
+    while (bContinue)
+    {
+        // Try to enter the semaphore gate.
+        dwWaitResult = WaitForSingleObject(
+            ghSemaphore,   // handle to semaphore
+            0L);           // zero-second time-out interval
+
+        switch (dwWaitResult)
+        {
+            // The semaphore object was signaled.
+            case WAIT_OBJECT_0:
+                // TODO: Perform task
+                printf("Thread %d: wait succeeded\n", GetCurrentThreadId());
+                bContinue = FALSE;
+                // Simulate thread spending time on task
+                Sleep(2);
+                // Release the semaphore when task is finished
+                ReleaseSemaphore(ghSemaphore, 1, NULL);
+                break;
+
+            // The semaphore was nonsignaled, so a time-out occurred.
+            case WAIT_TIMEOUT:
+                printf("Thread %d: wait timed out\n", GetCurrentThreadId());
+                break;
+        }
+    }
+}
 
 void GetCharToContinute()
 {
@@ -21,12 +52,7 @@ void GetCharToContinute()
 
 int main(void)
 {
-    HANDLE aThread[THREADCOUNT];
-    DWORD ThreadID;
-    int i;
-
     // Create a semaphore with initial and max counts of MAX_SEM_COUNT
-
     ghSemaphore = CreateSemaphore(
         NULL,           // default security attributes
         MAX_SEM_COUNT,  // initial count
@@ -40,85 +66,22 @@ int main(void)
     }
 
     // Create worker threads
-
-    for (i = 0; i < THREADCOUNT; i++)
-    {
-        aThread[i] = CreateThread(
-            NULL,       // default security attributes
-            0,          // default stack size
-            (LPTHREAD_START_ROUTINE)ThreadProc,
-            NULL,       // no thread function arguments
-            0,          // default creation flags
-            &ThreadID); // receive thread identifier
-
-        if (aThread[i] == NULL)
-        {
-            printf("CreateThread error: %d\n", GetLastError());
-            return 1;
-        }
-    }
-
-    // Wait for all threads to terminate
-
-    WaitForMultipleObjects(THREADCOUNT, aThread, TRUE, INFINITE);
-
-    // Close thread and semaphore handles
-
-    for (i = 0; i < THREADCOUNT; i++)
-        CloseHandle(aThread[i]);
-
+    thread t1(ThreadProducer);
+    thread t2(ThreadProducer);
+    thread t3(ThreadProducer);
+    thread t4(ThreadProducer);
+    thread t5(ThreadProducer);
+    thread t6(ThreadProducer);
+    thread t7(ThreadProducer);
+    t1.join();
+    t2.join();
+    t3.join();
+    t4.join();
+    t5.join();
+    t6.join();
+    t7.join();
+    
     CloseHandle(ghSemaphore);
-
     GetCharToContinute();
-
     return 0;
-}
-
-DWORD WINAPI ThreadProc(LPVOID lpParam)
-{
-
-    // lpParam not used in this example
-    UNREFERENCED_PARAMETER(lpParam);
-
-    DWORD dwWaitResult;
-    BOOL bContinue = TRUE;
-
-    while (bContinue)
-    {
-        // Try to enter the semaphore gate.
-
-        dwWaitResult = WaitForSingleObject(
-            ghSemaphore,   // handle to semaphore
-            0L);           // zero-second time-out interval
-
-        switch (dwWaitResult)
-        {
-            // The semaphore object was signaled.
-        case WAIT_OBJECT_0:
-            // TODO: Perform task
-            printf("Thread %d: wait succeeded\n", GetCurrentThreadId());
-            bContinue = FALSE;
-
-            // Simulate thread spending time on task
-            Sleep(5);
-
-            // Release the semaphore when task is finished
-
-            if (!ReleaseSemaphore(
-                ghSemaphore,  // handle to semaphore
-                1,            // increase count by one
-                NULL))       // not interested in previous count
-            {
-                printf("ReleaseSemaphore error: %d\n", GetLastError());
-            }
-            break;
-
-            // The semaphore was nonsignaled, so a time-out occurred.
-        case WAIT_TIMEOUT:
-            printf("Thread %d: wait timed out\n", GetCurrentThreadId());
-            break;
-        }
-    }
-
-    return TRUE;
 }
